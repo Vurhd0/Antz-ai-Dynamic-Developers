@@ -6,8 +6,7 @@ The app is now configured to run in **mock mode** if Firebase credentials are no
 
 1. **No .env file needed** - The app will use default values
 2. **No Firebase credentials needed** - The app will run in mock mode (operations will be logged but not persisted)
-3. **No Upstash Redis needed** - Caching will be disabled
-4. **No Google Maps API needed** - Distance calculations will return None (you'll need to handle this in your app)
+3. **No Google Maps API needed** - Distance calculations will return None (you'll need to handle this in your app)
 
 ## Start the Server
 
@@ -29,10 +28,6 @@ Create a `.env` file in the root directory with:
 FIREBASE_CREDENTIALS_PATH=firebase-credentials.json
 FIREBASE_PROJECT_ID=your-project-id
 
-# Upstash Redis Configuration (Optional)
-UPSTASH_REDIS_URL=https://your-redis-instance.upstash.io
-UPSTASH_REDIS_TOKEN=your-redis-token
-
 # Google Maps API Configuration (Required for distance/ETA)
 GOOGLE_MAPS_API_KEY=your-google-maps-api-key
 
@@ -53,14 +48,7 @@ LOCATION_UPDATE_INTERVAL=5
 4. Click "Generate New Private Key"
 5. Save the JSON file as `firebase-credentials.json` in the project root
 
-### 3. Upstash Redis (Optional)
-
-1. Go to https://upstash.com/
-2. Create a Redis database
-3. Copy the REST URL and Token
-4. Add them to `.env`
-
-### 4. Google Maps API
+### 3. Google Maps API
 
 1. Go to Google Cloud Console
 2. Enable Distance Matrix API
@@ -79,7 +67,6 @@ Once the server is running, you can test endpoints using:
 In mock mode:
 - All Firebase operations will print "Mock: Would..." messages
 - No data will be persisted
-- Cache operations will be skipped
 - Google Maps API calls will return None (handle gracefully in your app)
 
 This allows you to test the API structure and endpoints without setting up external services.

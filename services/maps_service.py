@@ -1,18 +1,51 @@
-import googlemaps
+import math
 from typing import List, Dict, Optional, Tuple
 from config import Config
 from models.location import Location
 
 class MapsService:
-    """Service class for Google Maps API operations"""
+    """Service class for distance and ETA calculations using Haversine formula"""
     
     def __init__(self):
-        """Initialize Google Maps client"""
-        if Config.GOOGLE_MAPS_API_KEY:
-            self.gmaps = googlemaps.Client(key=Config.GOOGLE_MAPS_API_KEY)
-        else:
-            self.gmaps = None
-            print("Warning: Google Maps API key not configured.")
+        """Initialize Maps Service"""
+        # Average driving speed in km/h (for ETA calculation)
+        self.avg_speed_kmh = 40.0  # 40 km/h average city speed
+        print("✓ Maps Service initialized (using Haversine distance calculation)")
+    
+    def _calculate_haversine_distance(self, loc1: Location, loc2: Location) -> float:
+        """
+        Calculate distance between two locations using Haversine formula
+        Returns distance in kilometers
+        """
+        # Earth's radius in kilometers
+        R = 6371.0
+        
+        # Convert latitude and longitude from degrees to radians
+        lat1_rad = math.radians(loc1.latitude)
+        lon1_rad = math.radians(loc1.longitude)
+        lat2_rad = math.radians(loc2.latitude)
+        lon2_rad = math.radians(loc2.longitude)
+        
+        # Haversine formula
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+        
+        a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
+        distance = R * c
+        return distance
+    
+    def _calculate_eta_minutes(self, distance_km: float) -> float:
+        """
+        Calculate estimated time of arrival in minutes
+        Based on average driving speed
+        """
+        # ETA = distance / speed (in hours) * 60 (to minutes)
+        # Add some buffer for traffic (multiply by 1.3)
+        eta_hours = (distance_km / self.avg_speed_kmh) * 1.3
+        eta_minutes = eta_hours * 60.0
+        return round(eta_minutes, 2)
     
     def calculate_distance_matrix(
         self, 
@@ -20,43 +53,27 @@ class MapsService:
         destinations: List[Location]
     ) -> Optional[List[Dict]]:
         """
-        Calculate distance matrix using Google Distance Matrix API
+        Calculate distance matrix using Haversine formula
         Returns list of results with distance and duration for each origin-destination pair
         """
-        if not self.gmaps:
-            return None
-        
         try:
-            # Convert Location objects to string format
-            origin_strs = [f"{loc.latitude},{loc.longitude}" for loc in origins]
-            dest_strs = [f"{loc.latitude},{loc.longitude}" for loc in destinations]
-            
-            # Call Distance Matrix API
-            result = self.gmaps.distance_matrix(
-                origins=origin_strs,
-                destinations=dest_strs,
-                mode="driving",
-                units="metric"
-            )
-            
-            if result and "rows" in result:
-                results = []
-                for i, row in enumerate(result["rows"]):
-                    for j, element in enumerate(row["elements"]):
-                        if element["status"] == "OK":
-                            distance_km = element["distance"]["value"] / 1000.0  # Convert meters to km
-                            duration_minutes = element["duration"]["value"] / 60.0  # Convert seconds to minutes
-                            
-                            results.append({
-                                "origin_index": i,
-                                "destination_index": j,
-                                "distance_km": distance_km,
-                                "duration_minutes": duration_minutes,
-                                "distance_text": element["distance"]["text"],
-                                "duration_text": element["duration"]["text"]
-                            })
-                return results
-            return None
+            results = []
+            for i, origin in enumerate(origins):
+                for j, destination in enumerate(destinations):
+                    # Calculate distance using Haversine formula
+                    distance_km = self._calculate_haversine_distance(origin, destination)
+                    # Calculate ETA based on distance
+                    duration_minutes = self._calculate_eta_minutes(distance_km)
+                    
+                    results.append({
+                        "origin_index": i,
+                        "destination_index": j,
+                        "distance_km": round(distance_km, 2),
+                        "duration_minutes": duration_minutes,
+                        "distance_text": f"{distance_km:.2f} km",
+                        "duration_text": f"{duration_minutes:.0f} min"
+                    })
+            return results
         except Exception as e:
             print(f"Error calculating distance matrix: {str(e)}")
             return None
@@ -70,10 +87,13 @@ class MapsService:
         Get distance (km) and ETA (minutes) between two locations
         Returns (distance_km, eta_minutes) or None
         """
-        results = self.calculate_distance_matrix([origin], [destination])
-        if results and len(results) > 0:
-            return (results[0]["distance_km"], results[0]["duration_minutes"])
-        return None
+        try:
+            distance_km = self._calculate_haversine_distance(origin, destination)
+            eta_minutes = self._calculate_eta_minutes(distance_km)
+            return (round(distance_km, 2), eta_minutes)
+        except Exception as e:
+            print(f"Error calculating distance and ETA: {str(e)}")
+            return None
     
     def get_nearby_drivers_with_eta(
         self,
@@ -87,29 +107,24 @@ class MapsService:
         if not driver_locations:
             return []
         
-        # Prepare origins (passenger) and destinations (drivers)
-        origins = [passenger_location]
-        destinations = [loc for _, loc in driver_locations]
-        
-        # Calculate distance matrix
-        results = self.calculate_distance_matrix(origins, destinations)
-        
-        if not results:
-            return []
-        
-        # Map results to drivers
         driver_results = []
-        for result in results:
-            dest_index = result["destination_index"]
-            if dest_index < len(driver_locations):
-                driver_id, _ = driver_locations[dest_index]
+        
+        # Calculate distance and ETA for each driver
+        for driver_id, driver_location in driver_locations:
+            try:
+                distance_km = self._calculate_haversine_distance(passenger_location, driver_location)
+                eta_minutes = self._calculate_eta_minutes(distance_km)
+                
                 driver_results.append({
                     "driver_id": driver_id,
-                    "distance_km": result["distance_km"],
-                    "eta_minutes": result["duration_minutes"],
-                    "distance_text": result["distance_text"],
-                    "eta_text": result["duration_text"]
+                    "distance_km": round(distance_km, 2),
+                    "eta_minutes": eta_minutes,
+                    "distance_text": f"{distance_km:.2f} km",
+                    "eta_text": f"{eta_minutes:.0f} min"
                 })
+            except Exception as e:
+                print(f"Error calculating distance for driver {driver_id}: {str(e)}")
+                continue
         
         # Sort by ETA (lowest first)
         driver_results.sort(key=lambda x: x["eta_minutes"])

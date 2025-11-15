@@ -1,11 +1,10 @@
-from .firebase_service import FirebaseService
-from .cache_service import CacheService
+from .memory_storage import MemoryStorage, get_memory_storage
 from .maps_service import MapsService
 from .fare_service import FareService
 
 __all__ = [
-    "FirebaseService",
-    "CacheService",
+    "MemoryStorage",
+    "get_memory_storage",
     "MapsService",
     "FareService"
 ]

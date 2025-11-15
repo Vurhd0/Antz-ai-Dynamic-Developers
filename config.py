@@ -10,10 +10,6 @@ class Config:
     FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-credentials.json")
     FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
     
-    # Upstash Redis Configuration
-    UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL", "")
-    UPSTASH_REDIS_TOKEN = os.getenv("UPSTASH_REDIS_TOKEN", "")
-    
     # Google Maps API Configuration
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
     

@@ -7,17 +7,15 @@ import uuid
 from models.passenger import Passenger, PassengerLocation
 from models.location import Location
 from models.booking import Booking, BookingStatus, VehicleType
-from services.firebase_service import FirebaseService
-from services.cache_service import CacheService
+from services.memory_storage import get_memory_storage
 from services.maps_service import MapsService
 from services.fare_service import FareService
 from config import Config
 
 router = APIRouter(prefix="/passenger", tags=["Passenger"])
 
-# Initialize services
-firebase_service = FirebaseService()
-cache_service = CacheService()
+# Initialize services - use in-memory storage with hardcoded data
+storage = get_memory_storage()
 maps_service = MapsService()
 fare_service = FareService()
 
@@ -94,24 +92,14 @@ async def register_passenger(request: PassengerRegisterRequest):
             current_location=location
         )
         
-        # Store in Firebase
-        success = firebase_service.create_passenger(
+        # Store in memory
+        success = storage.create_passenger(
             request.user_id,
             passenger.to_dict()
         )
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to create passenger")
-        
-        # Cache location
-        location_data = {
-            "user_id": request.user_id,
-            "location": location.to_dict(),
-            "phone_number": request.phone_number,
-            "name": request.name,
-            "vehicle_preference": vehicle_type.value if vehicle_type else None
-        }
-        cache_service.set_passenger_location(request.user_id, location_data)
         
         return {
             "success": True,
@@ -129,7 +117,7 @@ async def update_passenger(request: PassengerUpdateRequest, user_id: str = Body(
     """
     try:
         # Get existing passenger
-        passenger_data = firebase_service.get_passenger(user_id)
+        passenger_data = storage.get_passenger(user_id)
         if not passenger_data:
             raise HTTPException(status_code=404, detail="Passenger not found")
         
@@ -148,8 +136,8 @@ async def update_passenger(request: PassengerUpdateRequest, user_id: str = Body(
         
         update_data["updated_at"] = datetime.now().isoformat()
         
-        # Update in Firebase
-        success = firebase_service.update_passenger(user_id, update_data)
+        # Update in memory
+        success = storage.update_passenger(user_id, update_data)
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update passenger")
@@ -176,26 +164,16 @@ async def update_passenger_location(request: LocationUpdateRequest):
         )
         
         # Get passenger data
-        passenger_data = firebase_service.get_passenger(request.user_id)
+        passenger_data = storage.get_passenger(request.user_id)
         if not passenger_data:
             raise HTTPException(status_code=404, detail="Passenger not found")
         
-        # Update location in Firebase
+        # Update location in memory
         update_data = {
             "current_location": location.to_dict(),
             "updated_at": datetime.now().isoformat()
         }
-        firebase_service.update_passenger(request.user_id, update_data)
-        
-        # Update cache
-        location_data = {
-            "user_id": request.user_id,
-            "location": location.to_dict(),
-            "phone_number": passenger_data.get("phone_number"),
-            "name": passenger_data.get("name"),
-            "vehicle_preference": passenger_data.get("vehicle_preference")
-        }
-        cache_service.set_passenger_location(request.user_id, location_data)
+        storage.update_passenger(request.user_id, update_data)
         
         return {
             "success": True,
@@ -218,8 +196,8 @@ async def get_nearby_taxis(request: NearbyTaxisRequest):
             longitude=request.longitude
         )
         
-        # Get available drivers from Firebase
-        available_drivers = firebase_service.get_available_drivers()
+        # Get available drivers from memory
+        available_drivers = storage.get_available_drivers()
         
         if not available_drivers:
             return {
@@ -239,17 +217,17 @@ async def get_nearby_taxis(request: NearbyTaxisRequest):
             except ValueError:
                 pass
         
-        # Get driver locations from cache or Firebase
+        # Get driver locations from memory
         driver_locations = []
         for driver in available_drivers:
             driver_id = driver.get("driver_id")
             if not driver_id:
                 continue
             
-            # Try cache first
-            cached_location = cache_service.get_driver_location(driver_id)
-            if cached_location and cached_location.get("location"):
-                loc_data = cached_location["location"]
+            # Get location from memory
+            driver_location_data = storage.get_driver_location(driver_id)
+            if driver_location_data and driver_location_data.get("location"):
+                loc_data = driver_location_data["location"]
                 location = Location(
                     latitude=loc_data["latitude"],
                     longitude=loc_data["longitude"]
@@ -279,7 +257,7 @@ async def get_nearby_taxis(request: NearbyTaxisRequest):
         )
         
         # Get passenger and driver counts for surge calculation
-        passenger_count = len(firebase_service.get_all_documents("passengers"))
+        passenger_count = len(storage.get_all_documents("passengers"))
         driver_count = len(available_drivers)
         
         # Calculate fare for each driver
@@ -320,17 +298,23 @@ async def book_taxi(request: BookTaxiRequest):
     """
     try:
         # Verify passenger exists
-        passenger_data = firebase_service.get_passenger(request.user_id)
+        passenger_data = storage.get_passenger(request.user_id)
         if not passenger_data:
             raise HTTPException(status_code=404, detail="Passenger not found")
         
         # Verify driver exists and is available
-        driver_data = firebase_service.get_driver(request.driver_id)
+        driver_data = storage.get_driver(request.driver_id)
         if not driver_data:
-            raise HTTPException(status_code=404, detail="Driver not found")
+            raise HTTPException(status_code=404, detail=f"Driver {request.driver_id} not found. Please select a valid driver.")
         
-        if not driver_data.get("is_available") or not driver_data.get("is_online"):
-            raise HTTPException(status_code=400, detail="Driver is not available")
+        is_available = driver_data.get("is_available", False)
+        is_online = driver_data.get("is_online", False)
+        
+        if not is_available:
+            raise HTTPException(status_code=400, detail=f"Driver {request.driver_id} is not available (currently on a ride). Please select another driver.")
+        
+        if not is_online:
+            raise HTTPException(status_code=400, detail=f"Driver {request.driver_id} is offline. Please select an online driver.")
         
         # Create pickup location
         pickup_location = Location(
@@ -360,7 +344,7 @@ async def book_taxi(request: BookTaxiRequest):
                 pass
         
         # Calculate distance and ETA
-        driver_location_data = cache_service.get_driver_location(request.driver_id)
+        driver_location_data = storage.get_driver_location(request.driver_id)
         if driver_location_data and driver_location_data.get("location"):
             driver_loc = Location(
                 latitude=driver_location_data["location"]["latitude"],
@@ -378,13 +362,16 @@ async def book_taxi(request: BookTaxiRequest):
         # Get distance and ETA
         distance_eta = maps_service.get_distance_and_eta(driver_loc, pickup_location)
         if not distance_eta:
-            raise HTTPException(status_code=500, detail="Failed to calculate distance")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to calculate distance from driver location ({driver_loc.latitude}, {driver_loc.longitude}) to pickup ({pickup_location.latitude}, {pickup_location.longitude})"
+            )
         
         distance_km, eta_minutes = distance_eta
         
         # Calculate fare
-        passenger_count = len(firebase_service.get_all_documents("passengers"))
-        driver_count = len(firebase_service.get_available_drivers())
+        passenger_count = len(storage.get_all_documents("passengers"))
+        driver_count = len(storage.get_available_drivers())
         
         fare, surge_multiplier = fare_service.calculate_fare_with_surge(
             distance_km,
@@ -409,11 +396,11 @@ async def book_taxi(request: BookTaxiRequest):
             surge_multiplier=surge_multiplier
         )
         
-        # Store booking in Firebase
-        success = firebase_service.create_booking(booking_id, booking.to_dict())
+        # Store booking in memory
+        success = storage.create_booking(booking_id, booking.to_dict())
         
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to create booking")
+            raise HTTPException(status_code=500, detail="Failed to create booking in storage")
         
         return {
             "success": True,
@@ -421,21 +408,54 @@ async def book_taxi(request: BookTaxiRequest):
             "booking_id": booking_id,
             "booking": booking.to_dict()
         }
-    except HTTPException:
-        raise
+    except HTTPException as he:
+        # Re-raise HTTP exceptions with their details
+        raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in book_taxi: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Booking failed: {str(e)}")
 
 
 @router.get("/booking/{booking_id}")
 async def get_booking(booking_id: str):
     """
     Get booking details
+    Calculates distance if missing based on pickup/dropoff locations
     """
     try:
-        booking_data = firebase_service.get_booking(booking_id)
+        booking_data = storage.get_booking(booking_id)
         if not booking_data:
             raise HTTPException(status_code=404, detail="Booking not found")
+        
+        # Calculate distance if missing
+        if not booking_data.get("distance_km") or booking_data.get("distance_km") == 0:
+            pickup_data = booking_data.get("pickup_location")
+            dropoff_data = booking_data.get("dropoff_location")
+            
+            if pickup_data and dropoff_data:
+                try:
+                    pickup_loc = Location(
+                        latitude=pickup_data["latitude"],
+                        longitude=pickup_data["longitude"]
+                    )
+                    dropoff_loc = Location(
+                        latitude=dropoff_data["latitude"],
+                        longitude=dropoff_data["longitude"]
+                    )
+                    
+                    distance_eta = maps_service.get_distance_and_eta(pickup_loc, dropoff_loc)
+                    if distance_eta:
+                        booking_data["distance_km"] = distance_eta[0]
+                        booking_data["estimated_time_minutes"] = distance_eta[1]
+                        # Update in storage
+                        storage.update_booking(booking_id, {
+                            "distance_km": distance_eta[0],
+                            "estimated_time_minutes": distance_eta[1]
+                        })
+                except Exception as e:
+                    print(f"Error calculating distance for booking {booking_id}: {e}")
         
         return {
             "success": True,
@@ -461,7 +481,7 @@ async def confirm_booking(request: ConfirmBookingRequest):
     """
     try:
         # Get booking
-        booking_data = firebase_service.get_booking(request.booking_id)
+        booking_data = storage.get_booking(request.booking_id)
         if not booking_data:
             raise HTTPException(status_code=404, detail="Booking not found")
         
@@ -489,7 +509,7 @@ async def confirm_booking(request: ConfirmBookingRequest):
             "confirmed_at": datetime.now().isoformat()
         }
         
-        success = firebase_service.update_booking(request.booking_id, update_data)
+        success = storage.update_booking(request.booking_id, update_data)
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to confirm booking")
@@ -498,7 +518,7 @@ async def confirm_booking(request: ConfirmBookingRequest):
         driver_id = booking_data.get("driver_id")
         driver_data = None
         if driver_id:
-            driver_data = firebase_service.get_driver(driver_id)
+            driver_data = storage.get_driver(driver_id)
         
         return {
             "success": True,
@@ -533,7 +553,7 @@ async def cancel_booking(request: CancelBookingRequest):
     """
     try:
         # Get booking
-        booking_data = firebase_service.get_booking(request.booking_id)
+        booking_data = storage.get_booking(request.booking_id)
         if not booking_data:
             raise HTTPException(status_code=404, detail="Booking not found")
         
@@ -599,7 +619,7 @@ async def cancel_booking(request: CancelBookingRequest):
             "cancellation_fee": cancellation_fee
         }
         
-        success = firebase_service.update_booking(request.booking_id, update_data)
+        success = storage.update_booking(request.booking_id, update_data)
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to cancel booking")
@@ -607,7 +627,7 @@ async def cancel_booking(request: CancelBookingRequest):
         # If driver was assigned, make them available again
         if booking_data.get("driver_id"):
             driver_id = booking_data.get("driver_id")
-            firebase_service.update_driver(driver_id, {"is_available": True})
+            storage.update_driver(driver_id, {"is_available": True})
         
         return {
             "success": True,

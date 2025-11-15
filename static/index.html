@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RealTaxi - Taxi Booking System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚕 RealTaxi</h1>
+            <p>Taxi Booking System</p>
+        </header>
+
+        <!-- Role Selection Screen -->
+        <div id="role-selection" class="screen active">
+            <div class="role-selection-container">
+                <h2>Welcome to RealTaxi</h2>
+                <p class="subtitle">Choose your role to continue</p>
+                <div class="role-buttons">
+                    <button class="role-btn passenger-btn" onclick="selectRole('passenger')">
+                        <div class="role-icon">👤</div>
+                        <div class="role-title">Passenger</div>
+                        <div class="role-desc">Book a ride</div>
+                    </button>
+                    <button class="role-btn driver-btn" onclick="selectRole('driver')">
+                        <div class="role-icon">🚕</div>
+                        <div class="role-title">Driver</div>
+                        <div class="role-desc">Accept rides</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Passenger Flow -->
+        <div id="passenger-flow" class="screen">
+            <div class="flow-header">
+                <button class="back-btn" onclick="goToRoleSelection()">← Back</button>
+                <h2>Passenger Dashboard</h2>
+            </div>
+
+            <!-- Step 1: Register Passenger -->
+            <div id="passenger-register" class="flow-step active">
+                <div class="section">
+                    <h2>📝 Register as Passenger</h2>
+                    <p class="step-desc">Enter your details to get started</p>
+                    <div class="form-group">
+                        <input type="text" id="passenger-name" placeholder="Your Name" required>
+                        <input type="text" id="passenger-phone" placeholder="Phone Number" required>
+                        <input type="number" id="passenger-lat" placeholder="Latitude (e.g., 28.6139)" value="28.6139" step="0.0001" required>
+                        <input type="number" id="passenger-lon" placeholder="Longitude (e.g., 77.2090)" value="77.2090" step="0.0001" required>
+                        <select id="passenger-vehicle" required>
+                            <option value="">Select Vehicle Preference</option>
+                            <option value="sedan">Sedan</option>
+                            <option value="suv">SUV</option>
+                            <option value="hatchback">Hatchback</option>
+                            <option value="premium">Premium</option>
+                        </select>
+                        <button onclick="registerPassenger()" class="primary-btn">Register & Continue</button>
+                    </div>
+                    <div id="passenger-register-status"></div>
+                </div>
+            </div>
+
+            <!-- Step 2: Find Nearby Taxis -->
+            <div id="passenger-find-taxis" class="flow-step">
+                <div class="section">
+                    <h2>🔍 Find Nearby Taxis</h2>
+                    <p class="step-desc">Search for available drivers near you. Then select one to book.</p>
+                    <div class="form-group">
+                        <input type="text" id="search-user-id" placeholder="Your User ID" readonly>
+                        <input type="number" id="search-lat" placeholder="Your Latitude" value="28.6139" step="0.0001">
+                        <input type="number" id="search-lon" placeholder="Your Longitude" value="77.2090" step="0.0001">
+                        <button onclick="findNearbyTaxis()" class="primary-btn">🔍 Find Taxis</button>
+                    </div>
+                    <div id="nearby-taxis">
+                        <div style="padding: 20px; text-align: center; color: #666;">
+                            <p>👆 Click "Find Taxis" to see available drivers near you</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Book Taxi -->
+            <div id="passenger-book" class="flow-step">
+                <div class="section">
+                    <h2>🚕 Book a Taxi</h2>
+                    <p class="step-desc">Review your selected driver and set your destination</p>
+                    <div id="selected-driver-info" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 15px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid var(--success-green); display: none;">
+                        <p style="margin: 0; font-weight: 600; color: var(--taxi-black);">
+                            ✓ Selected Driver: <span id="selected-driver-display"></span>
+                        </p>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="book-user-id" placeholder="Your User ID" readonly>
+                        <input type="text" id="book-driver-id" placeholder="Driver ID (Select from nearby taxis)" required readonly style="background: #f5f5f5;">
+                        <input type="number" id="book-pickup-lat" placeholder="Pickup Latitude" value="28.6139" step="0.0001">
+                        <input type="number" id="book-pickup-lon" placeholder="Pickup Longitude" value="77.2090" step="0.0001">
+                        <input type="number" id="book-dropoff-lat" placeholder="Dropoff Latitude" value="28.7041" step="0.0001">
+                        <input type="number" id="book-dropoff-lon" placeholder="Dropoff Longitude" value="77.1025" step="0.0001">
+                        <button onclick="bookTaxi()" class="primary-btn">🚕 Book Taxi</button>
+                    </div>
+                    <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid var(--taxi-yellow);">
+                        <p style="margin: 0; font-size: 0.9em; color: #856404;">
+                            💡 <strong>Tip:</strong> If driver ID is empty, go back to "Find Nearby Taxis" and select a driver first.
+                        </p>
+                    </div>
+                    <div id="booking-status"></div>
+                </div>
+            </div>
+
+            <!-- Step 4: Confirm Booking -->
+            <div id="passenger-confirm" class="flow-step">
+                <div class="section">
+                    <h2>✅ Confirm Booking</h2>
+                    <p class="step-desc">Confirm your booking after driver accepts</p>
+                    <div class="form-group">
+                        <input type="text" id="confirm-user-id" placeholder="Your User ID" readonly>
+                        <input type="text" id="confirm-booking-id" placeholder="Booking ID" readonly>
+                        <button onclick="confirmBooking()" class="primary-btn">✓ Confirm Booking</button>
+                    </div>
+                    <div id="confirm-status"></div>
+                </div>
+            </div>
+
+            <!-- Step 5: Active Ride Status -->
+            <div id="passenger-ride-status" class="flow-step">
+                <div class="section">
+                    <h2>🚗 Your Ride Status</h2>
+                    <div id="ride-status-content"></div>
+                    <div class="form-group">
+                        <button onclick="checkRideStatus()" class="primary-btn">🔄 Refresh Status</button>
+                        <button onclick="cancelBooking()" class="danger-btn">✕ Cancel Ride</button>
+                    </div>
+                    <div id="ride-status-message"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Driver Flow -->
+        <div id="driver-flow" class="screen">
+            <div class="flow-header">
+                <button class="back-btn" onclick="goToRoleSelection()">← Back</button>
+                <h2>Driver Dashboard</h2>
+            </div>
+
+            <!-- Step 1: Register Driver -->
+            <div id="driver-register" class="flow-step active">
+                <div class="section">
+                    <h2>📝 Register as Driver</h2>
+                    <p class="step-desc">Enter your driver details</p>
+                    <div class="form-group">
+                        <input type="text" id="driver-name" placeholder="Your Name" required>
+                        <input type="text" id="driver-phone" placeholder="Phone Number" required>
+                        <select id="driver-vehicle-type" required>
+                            <option value="">Select Vehicle Type</option>
+                            <option value="sedan">Sedan</option>
+                            <option value="suv">SUV</option>
+                            <option value="hatchback">Hatchback</option>
+                            <option value="premium">Premium</option>
+                        </select>
+                        <input type="text" id="driver-vehicle-number" placeholder="Vehicle Number (e.g., DL-01-XX-1234)" required>
+                        <button onclick="registerDriver()" class="primary-btn">Register & Continue</button>
+                    </div>
+                    <div id="driver-register-status"></div>
+                </div>
+            </div>
+
+            <!-- Step 2: Go Online -->
+            <div id="driver-online" class="flow-step">
+                <div class="section">
+                    <h2>🟢 Go Online</h2>
+                    <p class="step-desc">Go online to start receiving ride requests</p>
+                    <div class="form-group">
+                        <input type="text" id="online-driver-id" placeholder="Your Driver ID" readonly>
+                        <input type="number" id="location-lat" placeholder="Your Latitude" value="28.6139" step="0.0001">
+                        <input type="number" id="location-lon" placeholder="Your Longitude" value="77.2090" step="0.0001">
+                        <button onclick="goOnline()" class="success-btn">🟢 Go Online</button>
+                        <button onclick="goOffline()" class="secondary-btn">⚫ Go Offline</button>
+                    </div>
+                    <div id="online-status"></div>
+                </div>
+            </div>
+
+            <!-- Step 3: View Booking Requests -->
+            <div id="driver-requests" class="flow-step">
+                <div class="section">
+                    <h2>📋 Booking Requests</h2>
+                    <p class="step-desc">View and respond to ride requests</p>
+                    <div class="form-group">
+                        <input type="text" id="bookings-driver-id" placeholder="Your Driver ID" readonly>
+                        <button onclick="getDriverBookings()" class="primary-btn">🔄 Refresh Requests</button>
+                    </div>
+                    <div id="driver-bookings"></div>
+                </div>
+            </div>
+
+            <!-- Step 4: Accept/Decline Booking -->
+            <div id="driver-accept" class="flow-step">
+                <div class="section">
+                    <h2>✅ Accept Booking</h2>
+                    <p class="step-desc">Accept or decline ride requests</p>
+                    <div class="form-group">
+                        <input type="text" id="accept-driver-id" placeholder="Your Driver ID" readonly>
+                        <input type="text" id="accept-booking-id" placeholder="Booking ID">
+                        <button onclick="acceptBooking()" class="success-btn">✓ Accept Booking</button>
+                        <button onclick="declineBooking()" class="danger-btn">✕ Decline</button>
+                    </div>
+                    <div id="accept-status"></div>
+                </div>
+            </div>
+
+            <!-- Step 5: Active Ride Management -->
+            <div id="driver-ride" class="flow-step">
+                <div class="section">
+                    <h2>🚗 Active Ride</h2>
+                    <div id="active-ride-content"></div>
+                    <div class="form-group">
+                        <input type="text" id="start-driver-id" placeholder="Your Driver ID" readonly>
+                        <input type="text" id="start-booking-id" placeholder="Booking ID" readonly>
+                        <button onclick="startRide()" class="primary-btn">▶ Start Ride</button>
+                        <button onclick="completeRide()" class="success-btn">🏁 Complete Ride</button>
+                    </div>
+                    <div id="ride-action-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Container (shown when needed) -->
+        <div id="map-container-wrapper" class="map-container" style="display: none;">
+            <img id="map-image" class="map-image" src="https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/77.2090,28.6139,12,0/800x400@2x?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw" alt="Map" loading="lazy">
+            <div class="map-overlay">
+                <div class="passenger-marker" style="top: 45%; left: 48%;">
+                    <div class="map-label" style="top: -35px; left: 50%; transform: translateX(-50%);">You</div>
+                </div>
+                <div class="driver-marker" style="top: 42%; left: 52%;">
+                    <div class="map-label" style="top: -35px; left: 50%; transform: translateX(-50%);">Driver</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

@@ -6,7 +6,6 @@ Backend API for RealTaxi - A Taxi Booking Application built with FastAPI, Fireba
 
 - **Framework**: FastAPI
 - **Database**: Firebase Firestore
-- **Cache**: Upstash Redis
 - **Maps API**: Google Maps API
 - **Language**: Python 3.8+
 
@@ -31,7 +30,6 @@ Backend API for RealTaxi - A Taxi Booking Application built with FastAPI, Fireba
 - Real-time location tracking
 - Dynamic fare calculation with surge pricing
 - Distance and ETA calculation using Google Maps API
-- Caching for improved performance
 
 ## Installation
 
@@ -53,7 +51,6 @@ cp .env.example .env
 
 Edit `.env` and add your configuration:
 - Firebase credentials path and project ID
-- Upstash Redis URL and token
 - Google Maps API key
 - Fare configuration (optional)
 
@@ -130,7 +127,6 @@ Surge multiplier is calculated based on passenger-to-driver ratio:
 ├── services/             # Business logic services
 │   ├── __init__.py
 │   ├── firebase_service.py
-│   ├── cache_service.py
 │   ├── maps_service.py
 │   └── fare_service.py
 └── routers/              # API route handlers
@@ -144,9 +140,7 @@ Surge multiplier is calculated based on passenger-to-driver ratio:
 - The backend uses object-oriented programming with classes and objects as requested
 - All services are implemented as classes with proper initialization
 - Location updates should be sent every 3-5 seconds for real-time tracking
-- The system uses caching to improve performance for frequently accessed data
-- Firebase Firestore is used for persistent storage
-- Upstash Redis is used for caching driver locations and available drivers list
+- Firebase Firestore is used for persistent storage and real-time location tracking
 
 ## License
 
