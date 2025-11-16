@@ -10,8 +10,11 @@ class Config:
     FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-credentials.json")
     FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
     
-    # Google Maps API Configuration
+    # Google Maps API Configuration (legacy, kept for backward compatibility)
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    
+    # OpenRouteService API Configuration
+    OPENROUTESERVICE_API_KEY = os.getenv("OPENROUTESERVICE_API_KEY", "")
     
     # Application Configuration
     BASE_FARE = float(os.getenv("BASE_FARE", "50.0"))  # Base fare in currency units

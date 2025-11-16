@@ -2,8 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from routers import passenger_router, driver_router
+from routers import passenger_router, driver_router 
+from routers import map_proxy 
+from routers import test_ors_router # <--- NEW IMPORT
 from services.memory_storage import get_memory_storage
+from config import Config
 
 # Create FastAPI app instance
 app = FastAPI(
@@ -15,7 +18,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual origins
+    allow_origins=["*"], # In production, specify actual origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,6 +33,9 @@ except Exception as e:
 # Include routers
 app.include_router(passenger_router)
 app.include_router(driver_router)
+# Register the map proxy and test router
+app.include_router(map_proxy.router) 
+app.include_router(test_ors_router.router) # <--- REGISTERED TEST ROUTER
 
 
 @app.get("/")
@@ -82,7 +88,21 @@ async def debug_data():
     }
 
 
+@app.get("/config/maps")
+async def get_maps_config():
+    """
+    Get Maps API configuration status
+    Returns OpenRouteService API key for frontend use
+    """
+    from config import Config
+    return {
+        "ors_api_key": Config.OPENROUTESERVICE_API_KEY if Config.OPENROUTESERVICE_API_KEY else "",
+        "ors_configured": bool(Config.OPENROUTESERVICE_API_KEY and Config.OPENROUTESERVICE_API_KEY.strip()),
+        "google_maps_configured": bool(Config.GOOGLE_MAPS_API_KEY and Config.GOOGLE_MAPS_API_KEY.strip()),
+        "note": "OpenRouteService API key is used for map visualization and routing"
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

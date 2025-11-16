@@ -5,6 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RealTaxi - Taxi Booking System</title>
     <link rel="stylesheet" href="/static/style.css">
+    <!-- Leaflet.js for Map Visualization -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+    
+    <script>
+        // OpenRouteService API Configuration
+        let orsApiKey = '';
+        let mapsLoaded = false;
+        
+        async function loadMapsConfig() {
+            try {
+                const response = await fetch('/config/maps');
+                const config = await response.json();
+                console.log('📋 Maps config loaded:', config);
+                
+                // Get OpenRouteService API key from backend
+                // Can be overridden by window.OPENROUTESERVICE_API_KEY
+                orsApiKey = window.OPENROUTESERVICE_API_KEY || config.ors_api_key || '';
+                
+                if (orsApiKey && orsApiKey !== '' && orsApiKey !== 'null' && orsApiKey !== 'undefined') {
+                    window.ORS_API_KEY = orsApiKey;
+                    window.OPENROUTESERVICE_API_KEY = orsApiKey; // Also set alternative name
+                    window.mapsLoaded = true; // Set as global window variable
+                    mapsLoaded = true;
+                    console.log('✅ OpenRouteService API configured successfully');
+                    console.log('API Key present:', orsApiKey.substring(0, 10) + '...');
+                } else {
+                    console.warn('⚠ OpenRouteService API key not configured. Map visualization will be limited.');
+                    console.warn('  Set OPENROUTESERVICE_API_KEY in .env file and restart server');
+                    window.mapsLoaded = true; // Still allow map to load, but routes won't work
+                    mapsLoaded = true;
+                }
+            } catch (error) {
+                console.error('❌ Error loading maps config:', error);
+                window.mapsLoaded = true; // Set even on error so script.js doesn't hang
+                mapsLoaded = true;
+            }
+        }
+        
+        // Initialize maps config (runs immediately on page load)
+        loadMapsConfig();
+    </script>
 </head>
 <body>
     <div class="container">
@@ -67,16 +113,25 @@
             <div id="passenger-find-taxis" class="flow-step">
                 <div class="section">
                     <h2>🔍 Find Nearby Taxis</h2>
-                    <p class="step-desc">Search for available drivers near you. Then select one to book.</p>
+                    <p class="step-desc">Enter your pickup location and destination to see available drivers with prices. Then select one to book.</p>
                     <div class="form-group">
                         <input type="text" id="search-user-id" placeholder="Your User ID" readonly>
-                        <input type="number" id="search-lat" placeholder="Your Latitude" value="28.6139" step="0.0001">
-                        <input type="number" id="search-lon" placeholder="Your Longitude" value="77.2090" step="0.0001">
+                        <label style="font-weight: 600; margin-top: 10px; color: var(--taxi-black);">📍 Pickup Location</label>
+                        <input type="number" id="search-lat" placeholder="Pickup Latitude" value="28.6139" step="0.0001">
+                        <input type="number" id="search-lon" placeholder="Pickup Longitude" value="77.2090" step="0.0001">
+                        <label style="font-weight: 600; margin-top: 10px; color: var(--taxi-black);">🏁 Destination Location (Optional - for accurate fare calculation)</label>
+                        <input type="number" id="search-dest-lat" placeholder="Destination Latitude (Optional)" value="28.7041" step="0.0001">
+                        <input type="number" id="search-dest-lon" placeholder="Destination Longitude (Optional)" value="77.1025" step="0.0001">
                         <button onclick="findNearbyTaxis()" class="primary-btn">🔍 Find Taxis</button>
+                    </div>
+                    <div style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196F3;">
+                        <p style="margin: 0; font-size: 0.9em; color: #1565c0;">
+                            💡 <strong>Tip:</strong> Enter destination to see accurate fare prices based on ride distance. The map will show your route when you search for taxis.
+                        </p>
                     </div>
                     <div id="nearby-taxis">
                         <div style="padding: 20px; text-align: center; color: #666;">
-                            <p>👆 Click "Find Taxis" to see available drivers near you</p>
+                            <p>👆 Enter pickup location and click "Find Taxis" to see available drivers with prices</p>
                         </div>
                     </div>
                 </div>
@@ -227,20 +282,16 @@
             </div>
         </div>
 
-        <!-- Map Container (shown when needed) -->
+        <!-- Interactive Google Map Container -->
         <div id="map-container-wrapper" class="map-container" style="display: none;">
-            <img id="map-image" class="map-image" src="https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/77.2090,28.6139,12,0/800x400@2x?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw" alt="Map" loading="lazy">
-            <div class="map-overlay">
-                <div class="passenger-marker" style="top: 45%; left: 48%;">
-                    <div class="map-label" style="top: -35px; left: 50%; transform: translateX(-50%);">You</div>
-                </div>
-                <div class="driver-marker" style="top: 42%; left: 52%;">
-                    <div class="map-label" style="top: -35px; left: 50%; transform: translateX(-50%);">Driver</div>
-                </div>
+            <div id="google-map" style="width: 100%; height: 100%; border-radius: 16px;"></div>
+            <div id="map-info" style="position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 10; display: none;">
+                <p style="margin: 0; font-size: 12px; color: #666;"><strong>Distance:</strong> <span id="map-distance">-</span></p>
+                <p style="margin: 0; font-size: 12px; color: #666;"><strong>ETA:</strong> <span id="map-eta">-</span></p>
             </div>
         </div>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js" defer></script>
 </body>
 </html>

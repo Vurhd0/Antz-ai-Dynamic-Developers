@@ -47,8 +47,10 @@ class LocationUpdateRequest(BaseModel):
 class NearbyTaxisRequest(BaseModel):
     """Request model for requesting nearby taxis"""
     user_id: str
-    latitude: float
-    longitude: float
+    latitude: float  # Pickup latitude
+    longitude: float  # Pickup longitude
+    destination_latitude: Optional[float] = None  # Destination latitude
+    destination_longitude: Optional[float] = None  # Destination longitude
     vehicle_preference: Optional[str] = None
 
 
@@ -250,30 +252,67 @@ async def get_nearby_taxis(request: NearbyTaxisRequest):
                 "message": "No drivers with location data found"
             }
         
-        # Calculate distances and ETAs using Google Maps API
+        # Calculate distances and ETAs from driver to pickup (for ETA only)
         driver_results = maps_service.get_nearby_drivers_with_eta(
-            passenger_location,
+            passenger_location,  # Pickup location
             driver_locations
         )
+        
+        # Calculate ride distance (pickup → destination) for fare calculation
+        ride_distance_km = None
+        ride_eta_minutes = None
+        
+        if request.destination_latitude and request.destination_longitude:
+            destination_location = Location(
+                latitude=request.destination_latitude,
+                longitude=request.destination_longitude
+            )
+            
+            # Calculate pickup → destination distance (the actual ride distance)
+            ride_distance_eta = maps_service.get_distance_and_eta(
+                passenger_location,  # Pickup
+                destination_location  # Destination
+            )
+            
+            if ride_distance_eta:
+                ride_distance_km, ride_eta_minutes = ride_distance_eta
         
         # Get passenger and driver counts for surge calculation
         passenger_count = len(storage.get_all_documents("passengers"))
         driver_count = len(available_drivers)
         
-        # Calculate fare for each driver
+        # Calculate fare for each driver based on ride distance (pickup → destination)
+        # NOT driver → pickup distance!
         for result in driver_results:
-            distance_km = result["distance_km"]
-            eta_minutes = result["eta_minutes"]
-            
-            fare, surge_multiplier = fare_service.calculate_fare_with_surge(
-                distance_km,
-                eta_minutes,
-                passenger_count,
-                driver_count
-            )
+            # Use ride distance for fare calculation (same for all drivers)
+            # Driver → pickup distance is only for ETA display
+            if ride_distance_km and ride_eta_minutes:
+                # Calculate fare based on actual ride distance (pickup → destination)
+                fare, surge_multiplier = fare_service.calculate_fare_with_surge(
+                    ride_distance_km,  # Use ride distance, not driver-to-pickup distance
+                    ride_eta_minutes,  # Use ride ETA, not driver-to-pickup ETA
+                    passenger_count,
+                    driver_count
+                )
+            else:
+                # Fallback: if no destination provided, use driver-to-pickup distance
+                # But this shouldn't happen in normal flow
+                distance_km = result["distance_km"]
+                eta_minutes = result["eta_minutes"]
+                fare, surge_multiplier = fare_service.calculate_fare_with_surge(
+                    distance_km,
+                    eta_minutes,
+                    passenger_count,
+                    driver_count
+                )
             
             result["estimated_fare"] = fare
             result["surge_multiplier"] = surge_multiplier
+            
+            # Add ride distance info to result (for display)
+            if ride_distance_km:
+                result["ride_distance_km"] = ride_distance_km
+                result["ride_eta_minutes"] = ride_eta_minutes
             
             # Add driver details
             driver_id = result["driver_id"]
@@ -359,23 +398,37 @@ async def book_taxi(request: BookTaxiRequest):
         else:
             raise HTTPException(status_code=400, detail="Driver location not available")
         
-        # Get distance and ETA
-        distance_eta = maps_service.get_distance_and_eta(driver_loc, pickup_location)
-        if not distance_eta:
+        # Calculate distance and ETA from driver to pickup (for ETA display only)
+        driver_to_pickup_eta = maps_service.get_distance_and_eta(driver_loc, pickup_location)
+        if not driver_to_pickup_eta:
             raise HTTPException(
                 status_code=500, 
                 detail=f"Failed to calculate distance from driver location ({driver_loc.latitude}, {driver_loc.longitude}) to pickup ({pickup_location.latitude}, {pickup_location.longitude})"
             )
         
-        distance_km, eta_minutes = distance_eta
+        driver_to_pickup_distance, driver_to_pickup_eta_minutes = driver_to_pickup_eta
         
-        # Calculate fare
+        # Calculate fare based on ACTUAL RIDE DISTANCE (pickup → destination)
+        # NOT driver → pickup distance!
+        if not dropoff_location:
+            raise HTTPException(status_code=400, detail="Dropoff location is required to calculate fare")
+        
+        ride_distance_eta = maps_service.get_distance_and_eta(pickup_location, dropoff_location)
+        if not ride_distance_eta:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to calculate distance from pickup ({pickup_location.latitude}, {pickup_location.longitude}) to destination ({dropoff_location.latitude}, {dropoff_location.longitude})"
+            )
+        
+        ride_distance_km, ride_eta_minutes = ride_distance_eta
+        
+        # Calculate fare based on actual ride distance (pickup → destination)
         passenger_count = len(storage.get_all_documents("passengers"))
         driver_count = len(storage.get_available_drivers())
         
         fare, surge_multiplier = fare_service.calculate_fare_with_surge(
-            distance_km,
-            eta_minutes,
+            ride_distance_km,  # Use ride distance, not driver-to-pickup distance
+            ride_eta_minutes,   # Use ride ETA, not driver-to-pickup ETA
             passenger_count,
             driver_count
         )
@@ -391,8 +444,8 @@ async def book_taxi(request: BookTaxiRequest):
             vehicle_type=vehicle_type,
             status=BookingStatus.PENDING,
             fare=fare,
-            distance_km=distance_km,
-            estimated_time_minutes=eta_minutes,
+            distance_km=ride_distance_km,  # Store actual ride distance (pickup → destination)
+            estimated_time_minutes=ride_eta_minutes,  # Store actual ride ETA
             surge_multiplier=surge_multiplier
         )
         
@@ -574,7 +627,7 @@ async def cancel_booking(request: CancelBookingRequest):
         # Get booking details for cancellation fee calculation
         total_fare = booking_data.get("fare", 0.0)
         if not total_fare or total_fare == 0:
-            # If fare not set, use a default minimum
+            # If fare not set, use a default minimum from Config
             total_fare = Config.BASE_FARE
         
         # Get vehicle type

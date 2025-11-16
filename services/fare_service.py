@@ -2,33 +2,34 @@ from typing import Optional, Tuple
 from datetime import datetime
 from models.location import Location
 from models.booking import VehicleType
+from config import Config
 import math
 
 class FareService:
     def __init__(self):
-        # Hardcoded values
-        self.base_fare = 50
-        self.rate_per_km = 10
-        self.rate_per_min = 2
+        # Use values from Config (can be overridden via .env)
+        self.base_fare = Config.BASE_FARE
+        self.rate_per_km = Config.RATE_PER_KM
+        self.rate_per_min = Config.RATE_PER_MIN
 
-        # Surge settings
-        self.SURGE_MILD_MIN = 1.2
-        self.SURGE_MILD_MAX = 1.4
-        self.SURGE_MED_MIN = 1.5
-        self.SURGE_MED_MAX = 1.8
-        self.SURGE_HIGH = 2.0
+        # Surge settings from Config
+        self.SURGE_MILD_MIN = Config.SURGE_MULTIPLIER_MILD_MIN
+        self.SURGE_MILD_MAX = Config.SURGE_MULTIPLIER_MILD_MAX
+        self.SURGE_MED_MIN = Config.SURGE_MULTIPLIER_MEDIUM_MIN
+        self.SURGE_MED_MAX = Config.SURGE_MULTIPLIER_MEDIUM_MAX
+        self.SURGE_HIGH = Config.SURGE_MULTIPLIER_HIGH
 
-        # Cancellation rules
-        self.GST_RATE = 0.06
-        self.CANCEL_PERCENT = 0.10
-        self.CANCEL_MAX = 100
+        # Cancellation rules from Config
+        self.GST_RATE = Config.GST_RATE
+        self.CANCEL_PERCENT = Config.CANCELLATION_FARE_PERCENTAGE
+        self.CANCEL_MAX = Config.CANCELLATION_FARE_MAX
 
-        self.FEE_HATCHBACK = 30
-        self.FEE_SEDAN = 40
-        self.FEE_SUV = 50
-        self.FEE_PREMIUM = 70
+        self.FEE_HATCHBACK = Config.CANCELLATION_FEE_HATCHBACK
+        self.FEE_SEDAN = Config.CANCELLATION_FEE_SEDAN
+        self.FEE_SUV = Config.CANCELLATION_FEE_SUV
+        self.FEE_PREMIUM = Config.CANCELLATION_FEE_PREMIUM
 
-        self.CANCEL_TIME_LIMIT = 5  # minutes
+        self.CANCEL_TIME_LIMIT = Config.CANCELLATION_TIME_THRESHOLD_STANDARD  # minutes
 
     def calculate_surge_multiplier(self, passengers: int, drivers: int) -> float:
         if drivers == 0:
